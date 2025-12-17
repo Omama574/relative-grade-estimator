@@ -91,7 +91,16 @@ function extractTheoryCourses(marksTable) {
 
   console.log("[RGE] FINAL THEORY COURSES:");
   console.table(theoryCourses);
-  console.log(theoryCourses);
+  chrome.runtime.sendMessage(
+  {
+    type: "THEORY_COURSES_EXTRACTED",
+    payload: theoryCourses
+  },
+  response => {
+    console.log("[RGE] Data sent to background:", response);
+  }
+);
+
 }
 
 function finalizeCourse(course) {
