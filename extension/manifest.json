@@ -8,13 +8,12 @@
     "default_popup": "popup.html"
   },
 
-"content_scripts": [
-  {
-    "matches": ["https://vtop.vit.ac.in/*"],
-    "js": ["content.js"],
-    "all_frames": true,
-    "run_at": "document_idle"
-  }
-]
-
+  "content_scripts": [
+    {
+      "matches": ["https://vtop.vit.ac.in/*"],
+      "js": ["content.js"],
+      "all_frames": true,
+      "run_at": "document_idle"
+    }
+  ]
 }
