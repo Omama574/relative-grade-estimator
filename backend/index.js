@@ -1,69 +1,86 @@
 import express from "express";
+import cors from "cors";
 import pkg from "pg";
 
 const { Pool } = pkg;
 
 const app = express();
+app.use(cors());
+
+
+// Handle preflight explicitly
+app.options("*", cors());
+
 app.use(express.json());
+
+/* ---------- DATABASE ---------- */
+
+if (!process.env.DATABASE_URL) {
+  console.error("DATABASE_URL missing");
+  process.exit(1);
+}
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false }
 });
 
-/**
- * Ensure database schema exists
- */
 async function initDatabase() {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS course_snapshots (
-      id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+      id SERIAL PRIMARY KEY,
       class_nbr TEXT NOT NULL,
-      total_weightage REAL NOT NULL,
-      created_at TIMESTAMP DEFAULT now()
+      course_code TEXT NOT NULL,
+      course_title TEXT NOT NULL,
+      faculty TEXT NOT NULL,
+      slot TEXT NOT NULL,
+      total_weightage NUMERIC NOT NULL,
+      components JSONB NOT NULL,
+      created_at TIMESTAMP DEFAULT NOW()
     );
   `);
 
   console.log("[DB] course_snapshots table ready");
 }
 
-app.get("/", (req, res) => {
+/* ---------- ROUTES ---------- */
+
+app.get("/", (_, res) => {
   res.json({ status: "ok", service: "relative-grade-backend" });
 });
 
-app.post("/api/submit", async (req, res) => {
-  const { classNbr, totalWeightage } = req.body;
+app.post("/submit", async (req, res) => {
+  const {
+    classNbr,
+    courseCode,
+    courseTitle,
+    faculty,
+    slot,
+    totalWeightage,
+    components
+  } = req.body;
 
-  if (!classNbr || typeof totalWeightage !== "number") {
-    return res.status(400).json({ error: "Invalid payload" });
-  }
+  await pool.query(
+    `
+    INSERT INTO course_snapshots
+    (class_nbr, course_code, course_title, faculty, slot, total_weightage, components)
+    VALUES ($1,$2,$3,$4,$5,$6,$7)
+    `,
+    [classNbr, courseCode, courseTitle, faculty, slot, totalWeightage, components]
+  );
 
-  try {
-    await pool.query(
-      `
-      INSERT INTO course_snapshots (class_nbr, total_weightage)
-      VALUES ($1, $2)
-      `,
-      [classNbr, totalWeightage]
-    );
-
-    res.json({ status: "ok" });
-  } catch (err) {
-    console.error("[DB ERROR]", err);
-    res.status(500).json({ error: "Database error" });
-  }
+  res.json({ success: true });
 });
+
+/* ---------- START ---------- */
 
 const PORT = process.env.PORT || 3000;
 
-/**
- * Start server ONLY after DB is ready
- */
 initDatabase()
   .then(() => {
-    app.listen(PORT, () => {
-      console.log(`Backend running on port ${PORT}`);
-    });
+    app.listen(PORT, () =>
+      console.log(`Backend running on port ${PORT}`)
+    );
   })
   .catch(err => {
     console.error("[FATAL] Database init failed", err);
