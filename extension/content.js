@@ -1,77 +1,144 @@
 console.log("[RGE] Content script loaded");
 
-let hasRun = false;
+let hasExtracted = false;
 
-/* -------- Extract Student ID -------- */
-
+/* ---------------- REGISTER NUMBER ---------------- */
 function getStudentId() {
-  const el = document.querySelector(".navbar-text");
-  return el ? el.innerText.split("(")[0].trim() : null;
+  const input = document.querySelector("#authorizedIDX");
+  if (!input) return null;
+
+  const regNo = input.value?.trim();
+  console.log("[RGE] Extracted Register Number:", regNo);
+
+  return regNo || null;
 }
 
-/* -------- Observer -------- */
+
+/* ---------------- MUTATION OBSERVER ---------------- */
 
 const observer = new MutationObserver(() => {
-  if (hasRun) return;
+  if (hasExtracted) return;
 
-  const table = findMarksTable();
-  if (!table) return;
-
-  hasRun = true;
-  console.log("[RGE] Marks table detected");
+  const marksTable = findMarksTable();
+  if (!marksTable) return;
 
   const studentId = getStudentId();
-  if (!studentId) return;
+  console.log("[RGE] Extracted Register Number:", studentId);
 
-  const courses = extractCourses(table, studentId);
-  chrome.runtime.sendMessage({ type: "SUBMIT", payload: courses });
+  if (!studentId) {
+    console.warn("[RGE] Register number not found, aborting.");
+    return;
+  }
+
+  hasExtracted = true;
+  console.log("[RGE] Marks table detected");
+
+  const theoryCourses = extractTheoryCourses(marksTable, studentId);
+
+  console.log("[RGE] FINAL THEORY COURSES:");
+  console.table(theoryCourses);
+
+  /* ---- SAFE SEND ---- */
+  if (
+    typeof chrome !== "undefined" &&
+    chrome.runtime &&
+    chrome.runtime.sendMessage
+  ) {
+    chrome.runtime.sendMessage(
+      {
+        type: "SUBMIT",
+        payload: theoryCourses
+      },
+      () => {
+        if (chrome.runtime.lastError) {
+          console.error(
+            "[RGE] sendMessage error:",
+            chrome.runtime.lastError.message
+          );
+        } else {
+          console.log("[RGE] Data sent to background.js");
+        }
+      }
+    );
+  } else {
+    console.error(
+      "[RGE] chrome.runtime.sendMessage not available"
+    );
+  }
 });
 
-observer.observe(document.body, { childList: true, subtree: true });
+observer.observe(document.body, {
+  childList: true,
+  subtree: true
+});
 
-/* -------- Helpers -------- */
+/* ---------------- FIND MARKS TABLE ---------------- */
 
 function findMarksTable() {
-  return [...document.querySelectorAll("table")]
-    .find(t => t.innerText.includes("Mark Title"));
+  const tables = Array.from(document.querySelectorAll("table"));
+  return tables.find(t =>
+    t.innerText.includes("Mark Title") &&
+    t.innerText.includes("Weightage Mark")
+  );
 }
 
-function extractCourses(table, studentId) {
-  const rows = [...table.querySelectorAll("tr")];
+/* ---------------- EXTRACTION LOGIC ---------------- */
+
+function extractTheoryCourses(table, studentId) {
+  const rows = Array.from(table.querySelectorAll("tr"));
+  console.log("[RGE] Total rows found:", rows.length);
+
   const courses = [];
-  let current = null;
+  let currentCourse = null;
 
   rows.forEach(row => {
-    const cells = [...row.children].map(td => td.innerText.trim());
+    const cells = Array.from(row.children).map(td =>
+      td.innerText.replace(/\s+/g, " ").trim()
+    );
 
+    if (cells.length === 0) return;
+
+    /* ---------- COURSE HEADER ---------- */
     if (cells.length === 9 && cells[1]?.startsWith("VL")) {
-      if (current) courses.push(current);
-      current = {
+      if (currentCourse) courses.push(finalize(currentCourse));
+
+      currentCourse = {
         studentId,
         classNbr: cells[1],
         courseCode: cells[2],
         courseTitle: cells[3],
+        courseType: cells[4],
         faculty: cells[6],
         slot: cells[7],
         totalWeightage: 0,
         components: []
       };
+      return;
     }
 
-    if (current && cells.length === 8 && !isNaN(cells[6])) {
+    /* ---------- MARK ROW ---------- */
+    if (
+      currentCourse &&
+      cells.length === 8 &&
+      !isNaN(parseFloat(cells[6]))
+    ) {
       const mark = parseFloat(cells[6]);
-      current.totalWeightage += mark;
-      current.components.push({
+      currentCourse.totalWeightage += mark;
+      currentCourse.components.push({
         component: cells[1],
         weightageMark: mark
       });
     }
   });
 
-  if (current) courses.push(current);
+  if (currentCourse) courses.push(finalize(currentCourse));
 
-  return courses.map(c => ({
-    ...c,
-    totalWeightage: Number(c.totalWeightage.toFixed(2))
-  }));
+  return courses.filter(c => c.courseType === "Theory Only");
+}
+
+/* ---------------- HELPERS ---------------- */
+
+function finalize(course) {
+  course.totalWeightage = Number(course.totalWeightage.toFixed(2));
+  return course;
 }
