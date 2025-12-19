@@ -1,49 +1,31 @@
 console.log("[RGE] Content script loaded");
 
-let extracted = false;
+function insertGradeRow(table, data) {
+  const row = table.insertRow(-1);
+  row.style.background = "#f3f3f3";
 
-const observer = new MutationObserver(() => {
-  if (extracted) return;
-
-  const table = findMarksTable();
-  if (!table) return;
-
-  extracted = true;
-  console.log("[RGE] Marks table detected");
-
-  const courses = extractTheoryCourses(table);
-
-  console.log("[RGE] FINAL THEORY COURSES:");
-  console.table(courses);
-
-  chrome.runtime.sendMessage({
-    type: "THEORY_COURSES_EXTRACTED",
-    payload: courses
-  });
-});
-
-observer.observe(document.body, { childList: true, subtree: true });
-
-function findMarksTable() {
-  return [...document.querySelectorAll("table")].find(t =>
-    t.innerText.includes("Mark Title") &&
-    t.innerText.includes("Weightage Mark")
-  );
+  row.innerHTML = `
+    <td colspan="2"><b>Relative Grade</b></td>
+    <td><b>${data.yourGrade}</b></td>
+    <td>Mean: ${data.mean}</td>
+    <td>SD: ${data.stdDev}</td>
+    <td>Participants: ${data.participants}</td>
+  `;
 }
 
-function extractTheoryCourses(table) {
-  const rows = [...table.querySelectorAll("tr")];
+function extractAndSend(table) {
+  const rows = Array.from(table.querySelectorAll("tr"));
+
   const courses = [];
   let current = null;
 
-  for (const row of rows) {
-    const cells = [...row.children].map(td =>
-      td.innerText.replace(/\s+/g, " ").trim()
+  rows.forEach(row => {
+    const cells = Array.from(row.children).map(td =>
+      td.innerText.trim()
     );
 
     if (cells.length === 9 && cells[1]?.startsWith("VL")) {
       if (current) courses.push(current);
-
       current = {
         classNbr: cells[1],
         courseCode: cells[2],
@@ -57,20 +39,45 @@ function extractTheoryCourses(table) {
     }
 
     if (current && cells.length === 8 && !isNaN(cells[6])) {
-      const w = parseFloat(cells[6]);
-      current.totalWeightage += w;
+      current.totalWeightage += Number(cells[6]);
       current.components.push({
         component: cells[1],
-        weightageMark: w
+        weightageMark: Number(cells[6])
       });
     }
-  }
+  });
 
   if (current) courses.push(current);
 
-  return courses.filter(c => c.courseType === "Theory Only")
-                .map(c => ({
-                  ...c,
-                  totalWeightage: Number(c.totalWeightage.toFixed(2))
-                }));
+  const theory = courses.filter(c => c.courseType === "Theory Only");
+
+  theory.forEach(async course => {
+    await fetch("https://relative-grade-estimator-production.up.railway.app/submit", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(course)
+    });
+
+    const res = await fetch(
+      `https://relative-grade-estimator-production.up.railway.app/grade/${course.courseCode}/${course.slot}/${course.classNbr}`
+    );
+
+    const data = await res.json();
+    insertGradeRow(table, data);
+  });
 }
+
+/* --------- OBSERVER --------- */
+
+const observer = new MutationObserver(() => {
+  const table = Array.from(document.querySelectorAll("table"))
+    .find(t => t.innerText.includes("Weightage Mark"));
+
+  if (table) {
+    observer.disconnect();
+    console.log("[RGE] Marks table detected");
+    extractAndSend(table);
+  }
+});
+
+observer.observe(document.body, { childList: true, subtree: true });
