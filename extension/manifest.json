@@ -1,21 +1,21 @@
 {
   "manifest_version": 3,
-  "name": "Relative Grade Estimator",
-  "version": "1.0",
-  "description": "Extracts VTOP marks and sends to backend",
+  "name": "Relative Grade Estimator (VTOP)",
+  "version": "1.0.0",
+  "description": "Shows relative grading stats on VTOP marks page.",
   "permissions": ["storage"],
   "host_permissions": [
     "https://vtop.vit.ac.in/*",
     "https://relative-grade-estimator-production.up.railway.app/*"
   ],
   "background": {
-    "service_worker": "background.js",
-    "type": "module"
+    "service_worker": "background.js"
   },
   "content_scripts": [
     {
       "matches": ["https://vtop.vit.ac.in/*"],
-      "js": ["content.js"]
+      "js": ["content.js"],
+      "run_at": "document_idle"
     }
   ]
 }

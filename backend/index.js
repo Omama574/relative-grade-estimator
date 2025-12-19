@@ -25,6 +25,14 @@ const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false }
 });
+import rateLimit from "express-rate-limit";
+
+app.use(
+  rateLimit({
+    windowMs: 60 * 1000,
+    max: 60
+  })
+);
 
 async function initDatabase() {
   // 1. Create table (NO unique constraint here)
