@@ -161,25 +161,20 @@ async function injectRelativeGrades() {
 
   const rows = Array.from(mainTable.querySelectorAll("tbody > tr"));
 
-  for (let i = 0; i < rows.length; i++) {
-    const row = rows[i];
+  for (const row of rows) {
     const cells = row.querySelectorAll("td");
 
     // COURSE HEADER ROW
     if (cells.length === 9 && cells[4]?.innerText.trim() === "Theory Only") {
+      // ✅ HARD STOP: already injected for this course row
+      if (row.dataset.rgeInjected === "true") continue;
+
       const meta = {
         classNbr: cells[1].innerText.trim(),
         courseCode: cells[2].innerText.trim(),
         faculty: cells[6].innerText.trim(),
         slot: cells[7].innerText.trim()
       };
-
-      // ⭐ FIX: stable per-course key
-      const courseKey = `${studentId}-${meta.classNbr}-${meta.courseCode}-${meta.slot}`;
-      if (injectedCourseKeys.has(courseKey)) continue;
-
-      const nextRow = rows[i + 1];
-      if (!nextRow) continue;
 
       try {
         const params = new URLSearchParams({
@@ -196,15 +191,19 @@ async function injectRelativeGrades() {
         if (!res.ok) throw new Error("No grade data");
 
         const data = await res.json();
-        nextRow.insertAdjacentHTML("afterend", buildRelativeGradeRow(data));
 
-        injectedCourseKeys.add(courseKey); // ⭐ FIX
+        // ✅ Insert UI RIGHT AFTER THIS COURSE ROW
+        row.insertAdjacentHTML("afterend", buildRelativeGradeRow(data));
+
+        // ✅ Mark THIS row as done (stable, DOM-safe)
+        row.dataset.rgeInjected = "true";
       } catch (err) {
         console.warn("[RGE] Grade fetch skipped:", meta.courseCode);
       }
     }
   }
 }
+
 
 /* =====================================================
    STYLES (SCOPED, SAFE)
