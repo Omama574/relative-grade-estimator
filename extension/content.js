@@ -5,6 +5,7 @@ console.log("[RGE] Content script loaded");
 ===================================================== */
 
 let hasSubmitted = false;
+const injectedCourseKeys = new Set(); // ⭐ FIX: stable de-duplication
 
 /* =====================================================
    REGISTER NUMBER
@@ -101,7 +102,7 @@ function finalize(course) {
 ===================================================== */
 
 function buildRelativeGradeRow(data) {
-  const { participants, mean, sd, ranges, yourGrade } = data;
+  const { participants, mean, sd, ranges, yourGrade, yourMarks } = data;
 
   return `
     <tr class="rge-row">
@@ -110,6 +111,7 @@ function buildRelativeGradeRow(data) {
           <table class="rge-table">
             <thead>
               <tr>
+                <th>Your Marks</th>
                 <th>Participants</th>
                 <th>Mean</th>
                 <th>SD</th>
@@ -125,6 +127,7 @@ function buildRelativeGradeRow(data) {
             </thead>
             <tbody>
               <tr>
+                <td>${yourMarks}</td>
                 <td>${participants}</td>
                 <td>${mean}</td>
                 <td>${sd}</td>
@@ -164,15 +167,19 @@ async function injectRelativeGrades() {
 
     // COURSE HEADER ROW
     if (cells.length === 9 && cells[4]?.innerText.trim() === "Theory Only") {
-      const nextRow = rows[i + 1];
-      if (!nextRow || nextRow.dataset.rgeInjected) continue;
-
       const meta = {
         classNbr: cells[1].innerText.trim(),
         courseCode: cells[2].innerText.trim(),
         faculty: cells[6].innerText.trim(),
         slot: cells[7].innerText.trim()
       };
+
+      // ⭐ FIX: stable per-course key
+      const courseKey = `${studentId}-${meta.classNbr}-${meta.courseCode}-${meta.slot}`;
+      if (injectedCourseKeys.has(courseKey)) continue;
+
+      const nextRow = rows[i + 1];
+      if (!nextRow) continue;
 
       try {
         const params = new URLSearchParams({
@@ -190,7 +197,8 @@ async function injectRelativeGrades() {
 
         const data = await res.json();
         nextRow.insertAdjacentHTML("afterend", buildRelativeGradeRow(data));
-        nextRow.dataset.rgeInjected = "true";
+
+        injectedCourseKeys.add(courseKey); // ⭐ FIX
       } catch (err) {
         console.warn("[RGE] Grade fetch skipped:", meta.courseCode);
       }
@@ -264,7 +272,7 @@ const observer = new MutationObserver(() => {
     }
   }
 
-  // 2️⃣ Inject UI (idempotent)
+  // 2️⃣ Inject UI (SAFE, NON-DUPLICATING)
   injectRelativeGrades();
 });
 
