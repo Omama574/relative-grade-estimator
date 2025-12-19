@@ -27,6 +27,7 @@ const pool = new Pool({
 });
 
 async function initDatabase() {
+  // 1. Create table (NO unique constraint here)
   await pool.query(`
     CREATE TABLE IF NOT EXISTS course_snapshots (
       id SERIAL PRIMARY KEY,
@@ -38,13 +39,19 @@ async function initDatabase() {
       slot TEXT NOT NULL,
       total_weightage NUMERIC NOT NULL,
       components JSONB NOT NULL,
-      created_at TIMESTAMP DEFAULT NOW(),
-      UNIQUE (student_id, class_nbr, course_code, slot)
+      created_at TIMESTAMP DEFAULT NOW()
     );
   `);
 
-  console.log("[DB] course_snapshots ready");
+  // 2. Create UNIQUE index safely (this is the key fix)
+  await pool.query(`
+    CREATE UNIQUE INDEX IF NOT EXISTS course_snapshots_unique_idx
+    ON course_snapshots (student_id, class_nbr, course_code, slot);
+  `);
+
+  console.log("[DB] course_snapshots ready (table + unique index)");
 }
+
 
 /* ---------------- HELPERS ---------------- */
 
