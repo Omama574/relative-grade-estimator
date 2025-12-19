@@ -3,6 +3,7 @@ console.log("[RGE] Content script loaded");
 let hasExtracted = false;
 
 /* ---------------- REGISTER NUMBER ---------------- */
+
 function getStudentId() {
   const input = document.querySelector("#authorizedIDX");
   if (!input) return null;
