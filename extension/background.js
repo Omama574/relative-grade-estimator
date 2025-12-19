@@ -1,8 +1,8 @@
 console.log("[RGE BG] Background running");
 
-chrome.runtime.onMessage.addListener((msg) => {
-  if (msg.type === "THEORY_COURSES_EXTRACTED") {
-    handleCourses(msg.payload);
+chrome.runtime.onMessage.addListener((message, sender) => {
+  if (message.type === "SUBMIT_COURSES") {
+    handleCourses(message.payload);
   }
 });
 
