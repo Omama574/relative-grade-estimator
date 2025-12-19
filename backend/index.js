@@ -5,18 +5,11 @@ import pkg from "pg";
 const { Pool } = pkg;
 const app = express();
 
-/* ---------- MIDDLEWARE ---------- */
-app.use(express.json());
 app.use(cors({ origin: "*" }));
+app.use(express.json());
 
-/* ---------- HEALTH CHECK ---------- */
-app.get("/", (_, res) => {
-  res.json({ status: "ok" });
-});
-
-/* ---------- DATABASE ---------- */
 if (!process.env.DATABASE_URL) {
-  console.error("❌ DATABASE_URL missing");
+  console.error("DATABASE_URL missing");
   process.exit(1);
 }
 
@@ -25,36 +18,67 @@ const pool = new Pool({
   ssl: { rejectUnauthorized: false }
 });
 
-/* ---------- ROUTE ---------- */
+await pool.query(`
+  CREATE TABLE IF NOT EXISTS course_snapshots (
+    id SERIAL PRIMARY KEY,
+    class_nbr TEXT,
+    course_code TEXT,
+    course_title TEXT,
+    faculty TEXT,
+    slot TEXT,
+    total_weightage NUMERIC,
+    components JSONB,
+    created_at TIMESTAMP DEFAULT NOW()
+  )
+`);
+
+app.get("/", (_, res) => {
+  res.json({ status: "ok" });
+});
+
 app.post("/submit", async (req, res) => {
+  const c = req.body;
+
+  await pool.query(
+    `INSERT INTO course_snapshots
+     (class_nbr, course_code, course_title, faculty, slot, total_weightage, components)
+     VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+    [
+      c.classNbr,
+      c.courseCode,
+      c.courseTitle,
+      c.faculty,
+      c.slot,
+      c.totalWeightage,
+      c.components
+    ]
+  );
+
+  res.json({ success: true });
+});
+app.post("/_migrate", async (req, res) => {
   try {
-    const {
-      classNbr,
-      courseCode,
-      courseTitle,
-      faculty,
-      slot,
-      totalWeightage,
-      components
-    } = req.body;
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS course_snapshots (
+        id SERIAL PRIMARY KEY,
+        class_nbr TEXT NOT NULL,
+        course_code TEXT NOT NULL,
+        course_title TEXT NOT NULL,
+        faculty TEXT NOT NULL,
+        slot TEXT NOT NULL,
+        total_weightage NUMERIC NOT NULL,
+        components JSONB NOT NULL,
+        created_at TIMESTAMP DEFAULT NOW()
+      );
+    `);
 
-    await pool.query(
-      `INSERT INTO course_snapshots
-       (class_nbr, course_code, course_title, faculty, slot, total_weightage, components)
-       VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-      [classNbr, courseCode, courseTitle, faculty, slot, totalWeightage, components]
-    );
-
-    res.json({ success: true });
+    res.json({ success: true, message: "Table created" });
   } catch (err) {
-    console.error("❌ Insert failed:", err);
-    res.status(500).json({ error: "db_error" });
+    console.error(err);
+    res.status(500).json({ error: err.message });
   }
 });
 
-/* ---------- START ---------- */
-const PORT = process.env.PORT || 3000;
-
-app.listen(PORT, () => {
-  console.log(`✅ Backend running on port ${PORT}`);
-});
+app.listen(process.env.PORT || 3000, () =>
+  console.log("Backend running")
+);

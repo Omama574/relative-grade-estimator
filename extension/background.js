@@ -1,20 +1,31 @@
-console.log("[RGE] Background service worker started");
+console.log("[RGE BG] Background running");
 
-let latestTheoryCourses = [];
-
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message.type === "THEORY_COURSES_EXTRACTED") {
-    latestTheoryCourses = message.payload;
-    console.log("[RGE] Stored theory courses:", latestTheoryCourses);
-    sendResponse({ status: "ok" });
+chrome.runtime.onMessage.addListener((msg) => {
+  if (msg.type === "THEORY_COURSES_EXTRACTED") {
+    handleCourses(msg.payload);
   }
-
-  if (message.type === "GET_LATEST_COURSES") {
-    sendResponse({
-      status: "ok",
-      data: latestTheoryCourses
-    });
-  }
-
-  return true;
 });
+
+async function handleCourses(courses) {
+  for (const course of courses) {
+    try {
+      const res = await fetch(
+        "https://relative-grade-estimator-production.up.railway.app/submit",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(course)
+        }
+      );
+
+      if (!res.ok) {
+        console.error("[RGE BG] Failed:", res.status);
+        continue;
+      }
+
+      console.log("[RGE BG] Sent:", course.courseCode);
+    } catch (err) {
+      console.error("[RGE BG] Network error", err);
+    }
+  }
+}

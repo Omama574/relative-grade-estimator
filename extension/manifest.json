@@ -1,23 +1,21 @@
 {
   "manifest_version": 3,
   "name": "Relative Grade Estimator",
-  "description": "Unofficial tool to estimate relative grades based on anonymized class data.",
-  "version": "0.1.0",
-
-  "action": {
-    "default_popup": "popup.html"
-  },
-
+  "version": "1.0",
+  "description": "Extracts VTOP marks and sends to backend",
+  "permissions": ["storage"],
+  "host_permissions": [
+    "https://vtop.vit.ac.in/*",
+    "https://relative-grade-estimator-production.up.railway.app/*"
+  ],
   "background": {
-    "service_worker": "background.js"
+    "service_worker": "background.js",
+    "type": "module"
   },
-
   "content_scripts": [
     {
       "matches": ["https://vtop.vit.ac.in/*"],
-      "js": ["content.js"],
-      "all_frames": true,
-      "run_at": "document_idle"
+      "js": ["content.js"]
     }
   ]
 }

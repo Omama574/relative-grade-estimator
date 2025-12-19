@@ -1,58 +1,50 @@
 console.log("[RGE] Content script loaded");
 
-let marksViewSeen = false;
 let extracted = false;
 
 const observer = new MutationObserver(() => {
-  if (!marksViewSeen && document.body.innerText.includes("Marks View")) {
-    marksViewSeen = true;
-    console.log("[RGE] Marks View detected");
-  }
+  if (extracted) return;
 
-  if (marksViewSeen && !extracted) {
-    const marksTable = findMarksTable();
-    if (marksTable) {
-      extracted = true;
-      console.log("[RGE] Marks table detected, extracting data");
-      extractTheoryCourses(marksTable);
-    }
-  }
+  const table = findMarksTable();
+  if (!table) return;
+
+  extracted = true;
+  console.log("[RGE] Marks table detected");
+
+  const courses = extractTheoryCourses(table);
+
+  console.log("[RGE] FINAL THEORY COURSES:");
+  console.table(courses);
+
+  chrome.runtime.sendMessage({
+    type: "THEORY_COURSES_EXTRACTED",
+    payload: courses
+  });
 });
 
-observer.observe(document.body, {
-  childList: true,
-  subtree: true
-});
+observer.observe(document.body, { childList: true, subtree: true });
 
 function findMarksTable() {
-  const tables = Array.from(document.querySelectorAll("table"));
-  return tables.find(t =>
+  return [...document.querySelectorAll("table")].find(t =>
     t.innerText.includes("Mark Title") &&
     t.innerText.includes("Weightage Mark")
   );
 }
 
-function extractTheoryCourses(marksTable) {
-  const rows = Array.from(marksTable.querySelectorAll("tr"));
-  console.log("[RGE] Total rows found:", rows.length);
+function extractTheoryCourses(table) {
+  const rows = [...table.querySelectorAll("tr")];
+  const courses = [];
+  let current = null;
 
-  const extractedCourses = [];
-  let currentCourse = null;
-
-  rows.forEach(row => {
-    const cells = Array.from(row.children).map(td =>
+  for (const row of rows) {
+    const cells = [...row.children].map(td =>
       td.innerText.replace(/\s+/g, " ").trim()
     );
 
-    if (cells.length === 0) return;
-
-    /* ================= COURSE HEADER ================= */
     if (cells.length === 9 && cells[1]?.startsWith("VL")) {
-      if (currentCourse) {
-        extractedCourses.push(finalizeCourse(currentCourse));
-      }
+      if (current) courses.push(current);
 
-      currentCourse = {
+      current = {
         classNbr: cells[1],
         courseCode: cells[2],
         courseTitle: cells[3],
@@ -62,48 +54,23 @@ function extractTheoryCourses(marksTable) {
         totalWeightage: 0,
         components: []
       };
-
-      return;
     }
 
-    /* ================= MARK ROW ================= */
-    if (
-      currentCourse &&
-      cells.length === 8 &&
-      !isNaN(parseFloat(cells[6]))
-    ) {
-      const weightage = parseFloat(cells[6]);
-      currentCourse.totalWeightage += weightage;
-      currentCourse.components.push({
+    if (current && cells.length === 8 && !isNaN(cells[6])) {
+      const w = parseFloat(cells[6]);
+      current.totalWeightage += w;
+      current.components.push({
         component: cells[1],
-        weightageMark: weightage
+        weightageMark: w
       });
     }
-  });
-
-  if (currentCourse) {
-    extractedCourses.push(finalizeCourse(currentCourse));
   }
 
-  const theoryCourses = extractedCourses.filter(
-    c => c.courseType === "Theory Only"
-  );
+  if (current) courses.push(current);
 
-  console.log("[RGE] FINAL THEORY COURSES:");
-  console.table(theoryCourses);
-  chrome.runtime.sendMessage(
-  {
-    type: "THEORY_COURSES_EXTRACTED",
-    payload: theoryCourses
-  },
-  response => {
-    console.log("[RGE] Data sent to background:", response);
-  }
-);
-
-}
-
-function finalizeCourse(course) {
-  course.totalWeightage = Number(course.totalWeightage.toFixed(2));
-  return course;
+  return courses.filter(c => c.courseType === "Theory Only")
+                .map(c => ({
+                  ...c,
+                  totalWeightage: Number(c.totalWeightage.toFixed(2))
+                }));
 }

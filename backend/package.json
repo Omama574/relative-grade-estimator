@@ -1,15 +1,13 @@
 {
   "name": "relative-grade-backend",
-  "version": "1.0.0",
-  "private": true,
   "type": "module",
+  "version": "1.0.0",
   "scripts": {
     "start": "node index.js"
   },
- "dependencies": {
-  "express": "^4.19.2",
-  "cors": "^2.8.5",
-  "pg": "^8.11.3"
-}
-
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.19.2",
+    "pg": "^8.11.3"
+  }
 }
