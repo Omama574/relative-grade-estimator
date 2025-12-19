@@ -1,10 +1,15 @@
 console.log("[RGE BG] Background running");
 
-chrome.runtime.onMessage.addListener((msg, _, sendResponse) => {
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === "SUBMIT") {
-    handleSubmit(msg.payload);
+    handleCourses(msg.payload)
+      .then(() => sendResponse({ ok: true }))
+      .catch(err => sendResponse({ ok: false, error: err.message }));
+
+    return true; // ⭐ REQUIRED
   }
 });
+
 
 async function handleSubmit(courses) {
   for (const course of courses) {

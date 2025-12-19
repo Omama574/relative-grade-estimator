@@ -109,27 +109,37 @@ app.post("/submit", async (req, res) => {
   }
 
   await pool.query(
-    `
-    INSERT INTO course_snapshots
-    (student_id, class_nbr, course_code, course_title, faculty, slot, total_weightage, components)
-    VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
-    ON CONFLICT (student_id, class_nbr, course_code, slot)
-    DO UPDATE SET
-      total_weightage = EXCLUDED.total_weightage,
-      components = EXCLUDED.components,
-      created_at = NOW()
-    `,
-    [
-      studentId,
-      classNbr,
-      courseCode,
-      courseTitle,
-      faculty,
-      slot,
-      totalWeightage,
-      components
-    ]
-  );
+  `
+  INSERT INTO course_snapshots
+  (
+    student_id,
+    class_nbr,
+    course_code,
+    course_title,
+    faculty,
+    slot,
+    total_weightage,
+    components
+  )
+  VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+  ON CONFLICT (student_id, class_nbr, course_code, slot)
+  DO UPDATE SET
+    total_weightage = EXCLUDED.total_weightage,
+    components = EXCLUDED.components,
+    created_at = NOW()
+  `,
+  [
+    studentId,
+    classNbr,
+    courseCode,
+    courseTitle,
+    faculty,
+    slot,
+    totalWeightage,
+    JSON.stringify(components) // ⭐ THIS IS THE FIX
+  ]
+);
+
 
   res.json({ success: true });
 });
