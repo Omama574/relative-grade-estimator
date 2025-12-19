@@ -1,26 +1,25 @@
 console.log("[RGE] Content script loaded");
 
-let sent = false;
+let hasExtracted = false;
 
 const observer = new MutationObserver(() => {
-  if (sent) return;
+  if (hasExtracted) return;
 
-  const table = findMarksTable();
-  if (!table) return;
+  const marksTable = findMarksTable();
+  if (!marksTable) return;
 
-  sent = true;
+  hasExtracted = true;
   console.log("[RGE] Marks table detected");
 
-  const theoryCourses = extractTheoryCourses(table);
+  const theoryCourses = extractTheoryCourses(marksTable);
+
   console.log("[RGE] FINAL THEORY COURSES:");
   console.table(theoryCourses);
 
-  // 🔴 THIS is the missing link
- chrome.runtime.sendMessage({
-  type: "THEORY_COURSES_EXTRACTED",
-  payload: theoryCourses
-});
-
+  chrome.runtime.sendMessage({
+    type: "THEORY_COURSES_EXTRACTED",
+    payload: theoryCourses
+  });
 });
 
 observer.observe(document.body, {
@@ -29,26 +28,26 @@ observer.observe(document.body, {
 });
 
 function findMarksTable() {
-  const tables = Array.from(document.querySelectorAll("table"));
-  return tables.find(t =>
+  return [...document.querySelectorAll("table")].find(t =>
     t.innerText.includes("Mark Title") &&
     t.innerText.includes("Weightage Mark")
   );
 }
 
 function extractTheoryCourses(table) {
-  const rows = Array.from(table.querySelectorAll("tr"));
-  const results = [];
+  const rows = [...table.querySelectorAll("tr")];
+  const courses = [];
   let current = null;
 
   rows.forEach(row => {
-    const cells = Array.from(row.children).map(td =>
+    const cells = [...row.children].map(td =>
       td.innerText.replace(/\s+/g, " ").trim()
     );
 
-    // Course header
+    if (!cells.length) return;
+
     if (cells.length === 9 && cells[1]?.startsWith("VL")) {
-      if (current) results.push(current);
+      if (current) courses.push(finalize(current));
 
       current = {
         classNbr: cells[1],
@@ -63,18 +62,22 @@ function extractTheoryCourses(table) {
       return;
     }
 
-    // Marks row
     if (current && cells.length === 8 && !isNaN(cells[6])) {
-      const w = Number(cells[6]);
-      current.totalWeightage += w;
+      const mark = Number(cells[6]);
+      current.totalWeightage += mark;
       current.components.push({
         component: cells[1],
-        weightageMark: w
+        weightageMark: mark
       });
     }
   });
 
-  if (current) results.push(current);
+  if (current) courses.push(finalize(current));
 
-  return results.filter(c => c.courseType === "Theory Only");
+  return courses.filter(c => c.courseType === "Theory Only");
+}
+
+function finalize(course) {
+  course.totalWeightage = Number(course.totalWeightage.toFixed(2));
+  return course;
 }
