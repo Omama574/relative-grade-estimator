@@ -11,15 +11,16 @@ const observer = new MutationObserver(() => {
   sent = true;
   console.log("[RGE] Marks table detected");
 
-  const courses = extractTheoryCourses(table);
+  const theoryCourses = extractTheoryCourses(table);
   console.log("[RGE] FINAL THEORY COURSES:");
-  console.table(courses);
+  console.table(theoryCourses);
 
   // 🔴 THIS is the missing link
-  chrome.runtime.sendMessage({
-    type: "THEORY_COURSES_EXTRACTED",
-    payload: courses
-  });
+ chrome.runtime.sendMessage({
+  type: "THEORY_COURSES_EXTRACTED",
+  payload: theoryCourses
+});
+
 });
 
 observer.observe(document.body, {
