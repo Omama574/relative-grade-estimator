@@ -161,12 +161,13 @@ async function injectRelativeGrades() {
 
   const rows = Array.from(mainTable.querySelectorAll("tbody > tr"));
 
-  for (const row of rows) {
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
     const cells = row.querySelectorAll("td");
 
     // COURSE HEADER ROW
     if (cells.length === 9 && cells[4]?.innerText.trim() === "Theory Only") {
-      // ✅ HARD STOP: already injected for this course row
+      // 🔒 hard lock per course
       if (row.dataset.rgeInjected === "true") continue;
 
       const meta = {
@@ -175,6 +176,17 @@ async function injectRelativeGrades() {
         faculty: cells[6].innerText.trim(),
         slot: cells[7].innerText.trim()
       };
+
+      // 🔍 find LAST row belonging to this course
+      let targetRow = row;
+      for (let j = i + 1; j < rows.length; j++) {
+        const nextCells = rows[j].querySelectorAll("td");
+        if (nextCells.length === 9 || nextCells.length === 0) break;
+        targetRow = rows[j];
+      }
+
+      // mark early to prevent race duplicates
+      row.dataset.rgeInjected = "true";
 
       try {
         const params = new URLSearchParams({
@@ -192,17 +204,20 @@ async function injectRelativeGrades() {
 
         const data = await res.json();
 
-        // ✅ Insert UI RIGHT AFTER THIS COURSE ROW
-        row.insertAdjacentHTML("afterend", buildRelativeGradeRow(data));
-
-        // ✅ Mark THIS row as done (stable, DOM-safe)
-        row.dataset.rgeInjected = "true";
+        // ✅ inject AFTER all marks
+        targetRow.insertAdjacentHTML(
+          "afterend",
+          buildRelativeGradeRow(data)
+        );
       } catch (err) {
-        console.warn("[RGE] Grade fetch skipped:", meta.courseCode);
+        console.warn("[RGE] Grade fetch failed:", meta.courseCode);
+        // Optional: delete row.dataset.rgeInjected to retry
       }
     }
   }
 }
+
+
 
 
 /* =====================================================
@@ -211,6 +226,11 @@ async function injectRelativeGrades() {
 
 const style = document.createElement("style");
 style.textContent = `
+.rge-row td {
+  padding: 0 !important;
+  border: none !important;
+}
+
   .rge-wrapper { margin: 10px 0; }
   .rge-table {
     width: 100%;
