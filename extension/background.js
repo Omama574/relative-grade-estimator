@@ -1,41 +1,21 @@
 console.log("[RGE BG] Background running");
 
-chrome.runtime.onMessage.addListener((message, sender) => {
-  if (message.type !== "THEORY_COURSES_EXTRACTED") return;
-
-  handleCourses(message.payload);
+chrome.runtime.onMessage.addListener((msg, _, sendResponse) => {
+  if (msg.type === "SUBMIT") {
+    handleSubmit(msg.payload);
+  }
 });
 
-async function handleCourses(courses) {
+async function handleSubmit(courses) {
   for (const course of courses) {
     try {
-      const res = await fetch(
-        "https://relative-grade-estimator-production.up.railway.app/submit",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json"
-          },
-          body: JSON.stringify({
-            classNbr: course.classNbr,
-            courseCode: course.courseCode,
-            courseTitle: course.courseTitle,
-            faculty: course.faculty,
-            slot: course.slot,
-            totalWeightage: course.totalWeightage,
-            components: course.components
-          })
-        }
-      );
-
-      if (!res.ok) {
-        console.error("[RGE BG] Failed:", res.status);
-        continue;
-      }
-
-      console.log("[RGE BG] Sent:", course.courseCode);
+      await fetch("https://relative-grade-estimator-production.up.railway.app/submit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(course)
+      });
     } catch (err) {
-      console.error("[RGE BG] Network error", err);
+      console.error("[RGE BG] Submit failed", err);
     }
   }
 }
