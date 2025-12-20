@@ -17,7 +17,7 @@ function getStudentId() {
 
   const regNo = input.value?.trim();
   if (regNo) {
-    console.log("[RGE] Extracted Register Number:", regNo);
+
     return regNo;
   }
   return null;
