@@ -1,21 +1,27 @@
 {
   "manifest_version": 3,
-  "name": "Relative Grade Estimator (VTOP)",
+  "name": "VIT Relative Grade Estimator",
+  "description": "Estimates relative grades on VTOP based on class mean and standard deviation. No personal data is stored beyond academic marks required for computation.",
   "version": "1.0.0",
-  "description": "Shows relative grading stats on VTOP marks page.",
-  "permissions": ["storage"],
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "permissions": [],
   "host_permissions": [
     "https://vtop.vit.ac.in/*",
     "https://relative-grade-estimator-production.up.railway.app/*"
   ],
-  "background": {
-    "service_worker": "background.js"
-  },
   "content_scripts": [
     {
       "matches": ["https://vtop.vit.ac.in/*"],
       "js": ["content.js"],
       "run_at": "document_idle"
     }
-  ]
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  }
 }
