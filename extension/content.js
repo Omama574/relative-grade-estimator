@@ -5,7 +5,7 @@ console.log("[RGE] Content script loaded");
 ===================================================== */
 
 let hasSubmitted = false;
-const injectedCourseKeys = new Set(); // ⭐ FIX: stable de-duplication
+const injectedCourseKeys = new Set();
 
 /* =====================================================
    REGISTER NUMBER
@@ -14,13 +14,7 @@ const injectedCourseKeys = new Set(); // ⭐ FIX: stable de-duplication
 function getStudentId() {
   const input = document.querySelector("#authorizedIDX");
   if (!input) return null;
-
-  const regNo = input.value?.trim();
-  if (regNo) {
-
-    return regNo;
-  }
-  return null;
+  return input.value?.trim() || null;
 }
 
 /* =====================================================
@@ -42,8 +36,6 @@ function findMarksTable() {
 
 function extractTheoryCourses(table, studentId) {
   const rows = Array.from(table.querySelectorAll("tr"));
-  console.log("[RGE] Total rows found:", rows.length);
-
   const courses = [];
   let currentCourse = null;
 
@@ -54,7 +46,6 @@ function extractTheoryCourses(table, studentId) {
 
     if (!cells.length) return;
 
-    // COURSE HEADER ROW
     if (cells.length === 9 && cells[1]?.startsWith("VL")) {
       if (currentCourse) courses.push(finalize(currentCourse));
 
@@ -72,7 +63,6 @@ function extractTheoryCourses(table, studentId) {
       return;
     }
 
-    // MARK ROW
     if (
       currentCourse &&
       cells.length === 8 &&
@@ -88,7 +78,6 @@ function extractTheoryCourses(table, studentId) {
   });
 
   if (currentCourse) courses.push(finalize(currentCourse));
-
   return courses.filter(c => c.courseType === "Theory Only");
 }
 
@@ -98,11 +87,21 @@ function finalize(course) {
 }
 
 /* =====================================================
-   UI: BUILD RELATIVE GRADE TABLE
+   UI BUILDERS
 ===================================================== */
 
+function buildLoadingRow() {
+  return `
+    <tr class="rge-loading-row">
+      <td colspan="9" style="text-align:center; padding:10px; color:#aaa;">
+        Fetching relative grade data…
+      </td>
+    </tr>
+  `;
+}
+
 function buildRelativeGradeRow(data) {
-  const { participants, mean, sd, ranges, yourGrade, yourMarks } = data;
+  const { yourMarks, participants, mean, sd, ranges, yourGrade } = data;
 
   return `
     <tr class="rge-row">
@@ -149,7 +148,27 @@ function buildRelativeGradeRow(data) {
 }
 
 /* =====================================================
-   UI: FETCH & INJECT RELATIVE GRADES
+   FETCH WITH SAFE RETRY (COLD START FIX)
+===================================================== */
+
+async function fetchGradeWithRetry(params, retries = 3) {
+  try {
+    const res = await fetch(
+      `https://relative-grade-estimator-production.up.railway.app/grade?${params}`
+    );
+    if (!res.ok) throw new Error("Not ready");
+    return await res.json();
+  } catch {
+    if (retries > 0) {
+      await new Promise(r => setTimeout(r, 1000));
+      return fetchGradeWithRetry(params, retries - 1);
+    }
+    throw new Error("Failed");
+  }
+}
+
+/* =====================================================
+   UI: FETCH & INJECT RELATIVE GRADES (STABLE)
 ===================================================== */
 
 async function injectRelativeGrades() {
@@ -165,11 +184,7 @@ async function injectRelativeGrades() {
     const row = rows[i];
     const cells = row.querySelectorAll("td");
 
-    // COURSE HEADER ROW
     if (cells.length === 9 && cells[4]?.innerText.trim() === "Theory Only") {
-      // 🔒 hard lock per course
-      if (row.dataset.rgeInjected === "true") continue;
-
       const meta = {
         classNbr: cells[1].innerText.trim(),
         courseCode: cells[2].innerText.trim(),
@@ -177,7 +192,9 @@ async function injectRelativeGrades() {
         slot: cells[7].innerText.trim()
       };
 
-      // 🔍 find LAST row belonging to this course
+      const courseKey = `${studentId}-${meta.classNbr}-${meta.courseCode}-${meta.slot}`;
+      if (injectedCourseKeys.has(courseKey)) continue;
+
       let targetRow = row;
       for (let j = i + 1; j < rows.length; j++) {
         const nextCells = rows[j].querySelectorAll("td");
@@ -185,8 +202,9 @@ async function injectRelativeGrades() {
         targetRow = rows[j];
       }
 
-      // mark early to prevent race duplicates
-      row.dataset.rgeInjected = "true";
+      injectedCourseKeys.add(courseKey);
+      targetRow.insertAdjacentHTML("afterend", buildLoadingRow());
+      const loadingRow = targetRow.nextElementSibling;
 
       try {
         const params = new URLSearchParams({
@@ -197,70 +215,54 @@ async function injectRelativeGrades() {
           faculty: meta.faculty
         });
 
-        const res = await fetch(
-          `https://relative-grade-estimator-production.up.railway.app/grade?${params}`
-        );
-        if (!res.ok) throw new Error("No grade data");
-
-        const data = await res.json();
-
-        // ✅ inject AFTER all marks
-        targetRow.insertAdjacentHTML(
-          "afterend",
-          buildRelativeGradeRow(data)
-        );
-      } catch (err) {
-        console.warn("[RGE] Grade fetch failed:", meta.courseCode);
-        // Optional: delete row.dataset.rgeInjected to retry
+        const data = await fetchGradeWithRetry(params);
+        loadingRow.outerHTML = buildRelativeGradeRow(data);
+      } catch {
+        loadingRow.remove();
       }
     }
   }
 }
 
-
-
-
 /* =====================================================
-   STYLES (SCOPED, SAFE)
+   STYLES
 ===================================================== */
 
 const style = document.createElement("style");
 style.textContent = `
-.rge-row td {
-  padding: 0 !important;
-  border: none !important;
+.rge-row td { padding: 0 !important; border: none !important; }
+.rge-wrapper { margin: 10px 0; }
+.rge-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: #1e1e1e;
+  color: #eaeaea;
+  font-size: 12px;
 }
-
-  .rge-wrapper { margin: 10px 0; }
-  .rge-table {
-    width: 100%;
-    border-collapse: collapse;
-    background: #1e1e1e;
-    color: #eaeaea;
-    font-size: 12px;
-  }
-  .rge-table th, .rge-table td {
-    border: 1px solid #444;
-    padding: 6px;
-    text-align: center;
-  }
-  .rge-table th {
-    background: #2c3e50;
-    font-weight: 600;
-  }
-  .rge-grade {
-    font-weight: bold;
-    color: #00e676;
-  }
+.rge-table th, .rge-table td {
+  border: 1px solid #444;
+  padding: 6px;
+  text-align: center;
+}
+.rge-table th {
+  background: #2c3e50;
+}
+.rge-grade {
+  font-weight: bold;
+  color: #00e676;
+}
+.rge-loading-row td {
+  background: #121212;
+  font-style: italic;
+}
 `;
 document.head.appendChild(style);
 
 /* =====================================================
-   MUTATION OBSERVER (SINGLE, SAFE)
+   MUTATION OBSERVER (SINGLE & SAFE)
 ===================================================== */
 
 const observer = new MutationObserver(() => {
-  // 1️⃣ Submit data ONCE
   if (!hasSubmitted) {
     const table = findMarksTable();
     const studentId = getStudentId();
@@ -269,29 +271,15 @@ const observer = new MutationObserver(() => {
       hasSubmitted = true;
       const courses = extractTheoryCourses(table, studentId);
 
-      if (
-        typeof chrome !== "undefined" &&
-        chrome.runtime &&
-        chrome.runtime.sendMessage
-      ) {
+      if (chrome?.runtime?.sendMessage) {
         chrome.runtime.sendMessage(
           { type: "SUBMIT", payload: courses },
-          () => {
-            if (chrome.runtime.lastError) {
-              console.error(
-                "[RGE] sendMessage error:",
-                chrome.runtime.lastError.message
-              );
-            } else {
-              console.log("[RGE] Data submitted successfully");
-            }
-          }
+          () => {}
         );
       }
     }
   }
 
-  // 2️⃣ Inject UI (SAFE, NON-DUPLICATING)
   injectRelativeGrades();
 });
 

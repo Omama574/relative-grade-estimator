@@ -1,18 +1,32 @@
 import express from "express";
 import cors from "cors";
 import pkg from "pg";
+import rateLimit from "express-rate-limit";
 
 const { Pool } = pkg;
 const app = express();
 
 /* ---------------- MIDDLEWARE ---------------- */
 
-app.use(cors({
-  origin: "*",
-  methods: ["GET", "POST"],
-  allowedHeaders: ["Content-Type"]
-}));
+app.use(
+  cors({
+    origin: "*",
+    methods: ["GET", "POST"],
+    allowedHeaders: ["Content-Type"]
+  })
+);
+
 app.use(express.json());
+
+// Required for Railway / proxies (rate-limit)
+app.set("trust proxy", 1);
+
+app.use(
+  rateLimit({
+    windowMs: 60 * 1000, // 1 minute
+    max: 60              // 60 requests / minute / IP
+  })
+);
 
 /* ---------------- DATABASE ---------------- */
 
@@ -25,18 +39,9 @@ const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false }
 });
-app.set("trust proxy", 1); // <-- THIS LINE
-import rateLimit from "express-rate-limit";
-
-app.use(
-  rateLimit({
-    windowMs: 60 * 1000,
-    max: 60
-  })
-);
 
 async function initDatabase() {
-  // 1. Create table (NO unique constraint here)
+  // Create table
   await pool.query(`
     CREATE TABLE IF NOT EXISTS course_snapshots (
       id SERIAL PRIMARY KEY,
@@ -52,7 +57,7 @@ async function initDatabase() {
     );
   `);
 
-  // 2. Create UNIQUE index safely (this is the key fix)
+  // Create unique index safely (idempotent)
   await pool.query(`
     CREATE UNIQUE INDEX IF NOT EXISTS course_snapshots_unique_idx
     ON course_snapshots (student_id, class_nbr, course_code, slot);
@@ -61,7 +66,6 @@ async function initDatabase() {
   console.log("[DB] course_snapshots ready (table + unique index)");
 }
 
-
 /* ---------------- HELPERS ---------------- */
 
 function mean(values) {
@@ -69,6 +73,7 @@ function mean(values) {
 }
 
 function stdDev(values, mu) {
+  if (values.length === 1) return 0; // ✅ IMPORTANT: SD = 0 for one student
   const variance =
     values.reduce((a, b) => a + Math.pow(b - mu, 2), 0) / values.length;
   return Math.sqrt(variance);
@@ -117,45 +122,49 @@ app.post("/submit", async (req, res) => {
   } = req.body;
 
   if (
-    !studentId || !classNbr || !courseCode ||
-    !courseTitle || !faculty || !slot ||
-    totalWeightage == null || !components
+    !studentId ||
+    !classNbr ||
+    !courseCode ||
+    !courseTitle ||
+    !faculty ||
+    !slot ||
+    totalWeightage == null ||
+    !components
   ) {
     return res.status(400).json({ error: "Invalid payload" });
   }
 
   await pool.query(
-  `
-  INSERT INTO course_snapshots
-  (
-    student_id,
-    class_nbr,
-    course_code,
-    course_title,
-    faculty,
-    slot,
-    total_weightage,
-    components
-  )
-  VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
-  ON CONFLICT (student_id, class_nbr, course_code, slot)
-  DO UPDATE SET
-    total_weightage = EXCLUDED.total_weightage,
-    components = EXCLUDED.components,
-    created_at = NOW()
-  `,
-  [
-    studentId,
-    classNbr,
-    courseCode,
-    courseTitle,
-    faculty,
-    slot,
-    totalWeightage,
-    JSON.stringify(components) // ⭐ THIS IS THE FIX
-  ]
-);
-
+    `
+    INSERT INTO course_snapshots
+    (
+      student_id,
+      class_nbr,
+      course_code,
+      course_title,
+      faculty,
+      slot,
+      total_weightage,
+      components
+    )
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+    ON CONFLICT (student_id, class_nbr, course_code, slot)
+    DO UPDATE SET
+      total_weightage = EXCLUDED.total_weightage,
+      components = EXCLUDED.components,
+      created_at = NOW()
+    `,
+    [
+      studentId,
+      classNbr,
+      courseCode,
+      courseTitle,
+      faculty,
+      slot,
+      totalWeightage,
+      JSON.stringify(components)
+    ]
+  );
 
   res.json({ success: true });
 });
@@ -203,7 +212,7 @@ app.get("/grade", async (req, res) => {
 
 /* ---------------- START ---------------- */
 
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 8080;
 
 initDatabase().then(() => {
   app.listen(PORT, () =>
