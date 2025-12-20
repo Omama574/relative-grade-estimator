@@ -25,6 +25,7 @@ const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false }
 });
+app.set("trust proxy", 1); // <-- THIS LINE
 import rateLimit from "express-rate-limit";
 
 app.use(
