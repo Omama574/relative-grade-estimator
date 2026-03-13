@@ -1,6 +1,22 @@
 console.log("[RGE] Content script loaded");
 
 /* =====================================================
+   CONFIG
+===================================================== */
+
+const CONFIG = {
+  BACKEND_URL: "https://relative-grade-estimator-production.up.railway.app" // UPDATE THIS after new deployment
+};
+
+async function hashString(str) {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(str);
+  const hashBuffer = await crypto.subtle.digest("SHA-256", data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2, "0")).join("");
+}
+
+/* =====================================================
    GLOBAL STATE
 ===================================================== */
 
@@ -11,10 +27,12 @@ const injectedCourseKeys = new Set();
    REGISTER NUMBER
 ===================================================== */
 
-function getStudentId() {
+async function getStudentId() {
   const input = document.querySelector("#authorizedIDX");
   if (!input) return null;
-  return input.value?.trim() || null;
+  const rawId = input.value?.trim();
+  if (!rawId) return null;
+  return await hashString(rawId);
 }
 
 /* =====================================================
@@ -154,7 +172,7 @@ function buildRelativeGradeRow(data) {
 async function fetchGradeWithRetry(params, retries = 3) {
   try {
     const res = await fetch(
-      `https://relative-grade-estimator-production.up.railway.app/grade?${params}`
+      `${CONFIG.BACKEND_URL}/grade?${params}`
     );
     if (!res.ok) throw new Error("Not ready");
     return await res.json();
@@ -172,7 +190,7 @@ async function fetchGradeWithRetry(params, retries = 3) {
 ===================================================== */
 
 async function injectRelativeGrades() {
-  const studentId = getStudentId();
+  const studentId = await getStudentId();
   if (!studentId) return;
 
   const mainTable = document.querySelector("#fixedTableContainer table");
@@ -262,10 +280,10 @@ document.head.appendChild(style);
    MUTATION OBSERVER (SINGLE & SAFE)
 ===================================================== */
 
-const observer = new MutationObserver(() => {
+const observer = new MutationObserver(async () => {
   if (!hasSubmitted) {
     const table = findMarksTable();
-    const studentId = getStudentId();
+    const studentId = await getStudentId();
 
     if (table && studentId) {
       hasSubmitted = true;
@@ -274,7 +292,7 @@ const observer = new MutationObserver(() => {
       if (chrome?.runtime?.sendMessage) {
         chrome.runtime.sendMessage(
           { type: "SUBMIT", payload: courses },
-          () => {}
+          () => { }
         );
       }
     }

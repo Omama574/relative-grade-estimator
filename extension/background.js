@@ -1,3 +1,11 @@
+/* =====================================================
+   CONFIG
+===================================================== */
+
+const CONFIG = {
+  BACKEND_URL: "https://relative-grade-estimator-production.up.railway.app" // UPDATE THIS after new deployment
+};
+
 console.log("[RGE BG] Background running");
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
@@ -14,7 +22,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 async function handleSubmit(courses) {
   for (const course of courses) {
     try {
-      await fetch("https://relative-grade-estimator-production.up.railway.app/submit", {
+      await fetch(`${CONFIG.BACKEND_URL}/submit`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(course)
