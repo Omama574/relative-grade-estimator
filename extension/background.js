@@ -3,7 +3,7 @@
 ===================================================== */
 
 const CONFIG = {
-  BACKEND_URL: "https://relative-grade-estimator-production.up.railway.app" // UPDATE THIS after new deployment
+  BACKEND_URL: "https://backend-production-c9a67.up.railway.app"
 };
 
 console.log("[RGE BG] Background running");

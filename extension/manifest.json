@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "VIT Relative Grade Estimator",
   "description": "Estimate relative grades on VTOP based on class performance. Requires other VTOP extensions to be disabled.",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "icons": {
     "16": "icons/icon16.png",
     "48": "icons/icon48.png",
@@ -11,7 +11,7 @@
   "permissions": [],
   "host_permissions": [
     "https://vtop.vit.ac.in/*",
-    "https://relative-grade-estimator-production.up.railway.app/*"
+    "https://backend-production-c9a67.up.railway.app/*"
   ],
   "content_scripts": [
     {
