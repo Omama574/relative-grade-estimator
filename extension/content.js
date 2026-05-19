@@ -1,9 +1,5 @@
 console.log("[RGE] Content script loaded");
 
-/* =====================================================
-   CONFIG
-===================================================== */
-
 const CONFIG = {
   BACKEND_URL: "https://backend-production-c9a67.up.railway.app"
 };
@@ -21,6 +17,8 @@ async function hashString(str) {
 ===================================================== */
 
 let hasSubmitted = false;
+let submitInProgress = false;
+let stylesInjected = false;
 const injectedCourseKeys = new Set();
 
 /* =====================================================
@@ -105,13 +103,101 @@ function finalize(course) {
 }
 
 /* =====================================================
+   SUBMIT (PROMISIFIED)
+===================================================== */
+
+function submitCourses(courses) {
+  return new Promise(resolve => {
+    chrome.runtime.sendMessage({ type: "SUBMIT", payload: courses }, resolve);
+  });
+}
+
+/* =====================================================
+   THEME-AWARE STYLES
+===================================================== */
+
+function injectStyles(table) {
+  if (stylesInjected) return;
+  stylesInjected = true;
+
+  // Read the actual background color of an existing table cell to detect theme
+  const sampleCell = table?.querySelector("td") ||
+    document.querySelector("#fixedTableContainer table td");
+
+  let dark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+
+  if (sampleCell) {
+    const bg = window.getComputedStyle(sampleCell).backgroundColor;
+    const rgb = bg.match(/\d+/g)?.map(Number);
+    if (rgb && rgb.length >= 3) {
+      const luminance = (0.299 * rgb[0] + 0.587 * rgb[1] + 0.114 * rgb[2]) / 255;
+      dark = luminance < 0.5;
+    }
+  }
+
+  const c = dark
+    ? {
+        tableBg: "#1e1e1e",
+        tableColor: "#eaeaea",
+        thBg: "#2c3e50",
+        thColor: "#eaeaea",
+        border: "#444",
+        gradeColor: "#00e676",
+        loadingBg: "#121212",
+        loadingColor: "#aaa"
+      }
+    : {
+        tableBg: "#eef2ff",
+        tableColor: "#1a1a2e",
+        thBg: "#2c3e50",
+        thColor: "#eaeaea",
+        border: "#b0c4de",
+        gradeColor: "#0055aa",
+        loadingBg: "#dde4f5",
+        loadingColor: "#555"
+      };
+
+  const style = document.createElement("style");
+  style.textContent = `
+.rge-row td { padding: 0 !important; border: none !important; }
+.rge-wrapper { margin: 10px 0; }
+.rge-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: ${c.tableBg};
+  color: ${c.tableColor};
+  font-size: 12px;
+}
+.rge-table th, .rge-table td {
+  border: 1px solid ${c.border};
+  padding: 6px;
+  text-align: center;
+}
+.rge-table th {
+  background: ${c.thBg};
+  color: ${c.thColor};
+}
+.rge-grade {
+  font-weight: bold;
+  color: ${c.gradeColor};
+}
+.rge-loading-row td {
+  background: ${c.loadingBg};
+  color: ${c.loadingColor};
+  font-style: italic;
+}
+`;
+  document.head.appendChild(style);
+}
+
+/* =====================================================
    UI BUILDERS
 ===================================================== */
 
 function buildLoadingRow() {
   return `
     <tr class="rge-loading-row">
-      <td colspan="9" style="text-align:center; padding:10px; color:#aaa;">
+      <td colspan="9" style="text-align:center; padding:10px;">
         Fetching relative grade data…
       </td>
     </tr>
@@ -171,9 +257,7 @@ function buildRelativeGradeRow(data) {
 
 async function fetchGradeWithRetry(params, retries = 3) {
   try {
-    const res = await fetch(
-      `${CONFIG.BACKEND_URL}/grade?${params}`
-    );
+    const res = await fetch(`${CONFIG.BACKEND_URL}/grade?${params}`);
     if (!res.ok) throw new Error("Not ready");
     return await res.json();
   } catch {
@@ -243,62 +327,29 @@ async function injectRelativeGrades() {
 }
 
 /* =====================================================
-   STYLES
-===================================================== */
-
-const style = document.createElement("style");
-style.textContent = `
-.rge-row td { padding: 0 !important; border: none !important; }
-.rge-wrapper { margin: 10px 0; }
-.rge-table {
-  width: 100%;
-  border-collapse: collapse;
-  background: #1e1e1e;
-  color: #eaeaea;
-  font-size: 12px;
-}
-.rge-table th, .rge-table td {
-  border: 1px solid #444;
-  padding: 6px;
-  text-align: center;
-}
-.rge-table th {
-  background: #2c3e50;
-}
-.rge-grade {
-  font-weight: bold;
-  color: #00e676;
-}
-.rge-loading-row td {
-  background: #121212;
-  font-style: italic;
-}
-`;
-document.head.appendChild(style);
-
-/* =====================================================
    MUTATION OBSERVER (SINGLE & SAFE)
 ===================================================== */
 
 const observer = new MutationObserver(async () => {
-  if (!hasSubmitted) {
+  if (!hasSubmitted && !submitInProgress) {
     const table = findMarksTable();
     const studentId = await getStudentId();
 
     if (table && studentId) {
-      hasSubmitted = true;
+      submitInProgress = true;
       const courses = extractTheoryCourses(table, studentId);
-
-      if (chrome?.runtime?.sendMessage) {
-        chrome.runtime.sendMessage(
-          { type: "SUBMIT", payload: courses },
-          () => { }
-        );
-      }
+      injectStyles(table);
+      await submitCourses(courses);
+      hasSubmitted = true;
+      submitInProgress = false;
+      injectRelativeGrades();
+      return;
     }
   }
 
-  injectRelativeGrades();
+  if (hasSubmitted) {
+    injectRelativeGrades();
+  }
 });
 
 observer.observe(document.body, {
